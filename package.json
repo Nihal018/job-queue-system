@@ -4,13 +4,16 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "worker": "node src/workers/jobWorker.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "express": "^5.2.1"
+    "bullmq": "^5.73.5",
+    "express": "^5.2.1",
+    "ioredis": "^5.10.1"
   }
 }
