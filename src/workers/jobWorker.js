@@ -3,43 +3,93 @@ import { connection } from "../queues/jobQueue.js";
 
 console.log("[Worker] Starting up...");
 
-// This simulates slow work — but notice it's now in the WORKER,
-// not in the API request handler.
-// The worker is a separate process, so it doesn't block the API.
-function simulateSlowJob(jobType, durationMs) {
-  console.log(
-    `[Worker][${new Date().toISOString()}] Processing ${jobType} job...`,
-  );
+// ─── Job type processors ─────────────────────────────────────────
 
-  const end = Date.now() + durationMs;
-  while (Date.now() < end) {
-    // still a blocking spin for now — we'll fix this in Part 2 Day 2
-  }
+async function processEmailJob(job) {
+  console.log(`[Worker] Sending email for job ${job.id}`);
 
-  console.log(
-    `[Worker][${new Date().toISOString()}] Done with ${jobType} job.`,
-  );
+  await job.updateProgress(10);
+  await sleep(1000); // simulate: connecting to mail server
+
+  await job.updateProgress(50);
+  await sleep(1000); // simulate: rendering template
+
+  await job.updateProgress(90);
+  await sleep(500); // simulate: sending
+
+  await job.updateProgress(100);
+
+  return { emailSentAt: new Date().toISOString() };
 }
 
-// Worker listens to the 'jobs' queue.
-// The second argument is a processor function — called once per job.
-const worker = new Worker(
-  "jobs",
-  async (job) => {
-    const { type, duration } = job.data;
+async function processImageResizeJob(job) {
+  console.log(`[Worker] Resizing image for job ${job.id}`);
 
-    simulateSlowJob(type, duration);
+  await job.updateProgress(0);
+  await sleep(500); // simulate: loading image
 
-    // Whatever we return here becomes job.returnvalue
-    return { processedAt: new Date().toISOString() };
-  },
-  { connection },
-);
+  await job.updateProgress(30);
+  await sleep(1500); // simulate: resizing
+
+  await job.updateProgress(80);
+  await sleep(500); // simulate: saving output
+
+  await job.updateProgress(100);
+
+  return {
+    resizedAt: new Date().toISOString(),
+    outputPath: "/tmp/resized.jpg",
+  };
+}
+
+async function processDataExportJob(job) {
+  console.log(`[Worker] Exporting data for job ${job.id}`);
+
+  const rows = 1000;
+
+  for (let i = 0; i <= rows; i += 200) {
+    await sleep(400); // simulate: fetching a batch of rows
+    const pct = Math.round((i / rows) * 100);
+    await job.updateProgress(pct);
+    console.log(`[Worker] Export progress: ${pct}%`);
+  }
+
+  return { exportedAt: new Date().toISOString(), rowCount: rows };
+}
+
+// ─── Router — dispatch to correct processor ───────────────────────
+
+async function processJob(job) {
+  switch (job.data.type) {
+    case "email":
+      return await processEmailJob(job);
+    case "image-resize":
+      return await processImageResizeJob(job);
+    case "data-export":
+      return await processDataExportJob(job);
+    default:
+      throw new Error(`Unknown job type: ${job.data.type}`);
+  }
+}
+
+// ─── Worker ───────────────────────────────────────────────────────
+
+const worker = new Worker("jobs", processJob, { connection });
 
 worker.on("completed", (job) => {
-  console.log(`[Worker] Job ${job.id} completed`);
+  console.log(`[Worker] ✓ Job ${job.id} (${job.data.type}) completed`);
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`[Worker] Job ${job.id} failed:`, err.message);
+  console.error(`[Worker] ✗ Job ${job.id} failed: ${err.message}`);
 });
+
+worker.on("progress", (job, progress) => {
+  console.log(`[Worker] Job ${job.id} progress: ${progress}%`);
+});
+
+// ─── Utility ──────────────────────────────────────────────────────
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
