@@ -5,6 +5,14 @@ const connection = {
   port: process.env.REDIS_PORT || 6379,
 };
 
-const jobQueue = new Queue("jobs", { connection });
+const defaultJobOptions = {
+  attempts: 3,
+  backoff: {
+    type: "exponential",
+    delay: 1000,
+  },
+};
+
+const jobQueue = new Queue("jobs", { connection, defaultJobOptions });
 
 export { jobQueue, connection };

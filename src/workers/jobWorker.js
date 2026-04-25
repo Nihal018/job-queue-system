@@ -3,39 +3,38 @@ import { connection } from "../queues/jobQueue.js";
 
 console.log("[Worker] Starting up...");
 
-// ─── Job type processors ─────────────────────────────────────────
+// ─── Processors ───────────────────────────────────────────────────
 
 async function processEmailJob(job) {
-  console.log(`[Worker] Sending email for job ${job.id}`);
+  console.log(`[Worker] Email job ${job.id} — attempt ${job.attemptsMade + 1}`);
 
   await job.updateProgress(10);
-  await sleep(1000); // simulate: connecting to mail server
+  await sleep(500);
 
-  await job.updateProgress(50);
-  await sleep(1000); // simulate: rendering template
+  // Simulate a flaky mail server — fails on first 2 attempts
+  if (job.attemptsMade < 2) {
+    throw new Error("Mail server temporarily unavailable");
+  }
 
-  await job.updateProgress(90);
-  await sleep(500); // simulate: sending
+  await job.updateProgress(60);
+  await sleep(500);
 
   await job.updateProgress(100);
-
   return { emailSentAt: new Date().toISOString() };
 }
 
 async function processImageResizeJob(job) {
-  console.log(`[Worker] Resizing image for job ${job.id}`);
+  console.log(
+    `[Worker] Image resize job ${job.id} — attempt ${job.attemptsMade + 1}`,
+  );
 
   await job.updateProgress(0);
-  await sleep(500); // simulate: loading image
+  await sleep(500);
 
-  await job.updateProgress(30);
-  await sleep(1500); // simulate: resizing
-
-  await job.updateProgress(80);
-  await sleep(500); // simulate: saving output
+  await job.updateProgress(50);
+  await sleep(1000);
 
   await job.updateProgress(100);
-
   return {
     resizedAt: new Date().toISOString(),
     outputPath: "/tmp/resized.jpg",
@@ -43,30 +42,39 @@ async function processImageResizeJob(job) {
 }
 
 async function processDataExportJob(job) {
-  console.log(`[Worker] Exporting data for job ${job.id}`);
+  console.log(`[Worker] Data export job ${job.id}`);
 
   const rows = 1000;
-
   for (let i = 0; i <= rows; i += 200) {
-    await sleep(400); // simulate: fetching a batch of rows
+    await sleep(300);
     const pct = Math.round((i / rows) * 100);
     await job.updateProgress(pct);
-    console.log(`[Worker] Export progress: ${pct}%`);
   }
 
   return { exportedAt: new Date().toISOString(), rowCount: rows };
 }
 
-// ─── Router — dispatch to correct processor ───────────────────────
+// Permanently broken — always throws, will exhaust all attempts
+async function processBrokenJob(job) {
+  console.log(
+    `[Worker] Broken job ${job.id} — attempt ${job.attemptsMade + 1}`,
+  );
+  await sleep(300);
+  throw new Error("This job always fails — bad input data");
+}
+
+// ─── Dispatcher ───────────────────────────────────────────────────
 
 async function processJob(job) {
   switch (job.data.type) {
     case "email":
-      return await processEmailJob(job);
+      return processEmailJob(job);
     case "image-resize":
-      return await processImageResizeJob(job);
+      return processImageResizeJob(job);
     case "data-export":
-      return await processDataExportJob(job);
+      return processDataExportJob(job);
+    case "broken":
+      return processBrokenJob(job);
     default:
       throw new Error(`Unknown job type: ${job.data.type}`);
   }
@@ -77,11 +85,15 @@ async function processJob(job) {
 const worker = new Worker("jobs", processJob, { connection });
 
 worker.on("completed", (job) => {
-  console.log(`[Worker] ✓ Job ${job.id} (${job.data.type}) completed`);
+  console.log(
+    `[Worker] ✓ Job ${job.id} (${job.data.type}) completed after ${job.attemptsMade + 1} attempt(s)`,
+  );
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`[Worker] ✗ Job ${job.id} failed: ${err.message}`);
+  console.error(
+    `[Worker] ✗ Job ${job.id} attempt ${job.attemptsMade}/${job.opts.attempts} failed: ${err.message}`,
+  );
 });
 
 worker.on("progress", (job, progress) => {
