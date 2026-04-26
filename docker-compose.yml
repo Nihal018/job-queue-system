@@ -1,0 +1,49 @@
+version: '3.9'
+
+services:
+
+  # ── Redis ──────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine          # official Redis image, alpine variant
+    container_name: jqs_redis
+    ports:
+      - "6379:6379"                # host:container — lets you connect from outside too
+    volumes:
+      - redis_data:/data           # persist Redis data across container restarts
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── API ────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: jqs_api
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy  # wait until Redis passes healthcheck
+    restart: unless-stopped
+
+  # ── Worker ─────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: jqs_worker
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+# ── Named volume ───────────────────────────────────────────────────
+volumes:
+  redis_data:

@@ -1,0 +1,13 @@
+FROM node:22-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install --omit=dev
+
+COPY . .
+
+# Workers don't expose ports — they only connect outward to Redis.
+# No EXPOSE needed.
+
+CMD ["node", "src/workers/jobWorker.js"]

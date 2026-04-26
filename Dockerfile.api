@@ -1,0 +1,25 @@
+# ── Base image ────────────────────────────────────────────────────
+# node:22-alpine is Node 22 on Alpine Linux.
+# Alpine is a minimal Linux distro — image is ~50MB vs ~900MB for full Debian.
+FROM node:22-alpine
+
+# ── Working directory ─────────────────────────────────────────────
+# All subsequent commands run from here inside the container.
+WORKDIR /app
+
+# ── Dependencies — copied FIRST for layer caching ─────────────────
+# If package.json hasn't changed, Docker reuses this cached layer.
+# npm install won't re-run just because your src/ files changed.
+COPY package*.json ./
+RUN npm install --omit=dev
+
+# ── Source code ───────────────────────────────────────────────────
+COPY . .
+
+# ── Port ──────────────────────────────────────────────────────────
+# EXPOSE is documentation — it doesn't actually publish the port.
+# The actual port binding happens in docker-compose.
+EXPOSE 3000
+
+# ── Start command ─────────────────────────────────────────────────
+CMD ["node", "src/server.js"]
